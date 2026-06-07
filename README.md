@@ -8,7 +8,20 @@ A lightweight HTTP server library for [Zig](https://ziglang.org/). Zero external
 
 ## Usage
 
-`zyn` is exposed as a module via `build.zig`. Import it in your project:
+Add `zyn` to your project with `zig fetch`:
+
+```bash
+zig fetch --save git+https://github.com/DeLsonJabberwo/zyn.git
+```
+
+Then import it in your `build.zig`:
+
+```zig
+const zyn_dep = b.dependency("zyn", .{});
+exe.root_module.addImport("zyn", zyn_dep.module("zyn"));
+```
+
+And in your source code:
 
 ```zig
 const zyn = @import("zyn");
