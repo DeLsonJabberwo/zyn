@@ -207,6 +207,9 @@ test "Server.route" {
     var server = try Server.init(allocator);
     defer server.deinit();
     try server.route(http.Method.GET, "/", error_handlers.notFoundHandler);
+    try std.testing.expect(server.get.get("/") == error_handlers.notFoundHandler);
+    try server.route(http.Method.GET, "/", error_handlers.internalServerErrorHandler);
+    try std.testing.expect(server.get.get("/") == error_handlers.internalServerErrorHandler);
     try server.route(http.Method.POST, "/", error_handlers.notFoundHandler);
     try server.route(http.Method.PUT, "/", error_handlers.notFoundHandler);
     try server.route(http.Method.PATCH, "/", error_handlers.notFoundHandler);
