@@ -91,6 +91,3 @@ zig build          # Build the module
 zig build test     # Run tests (native, x86_64-linux)
 ```
 
-## License
-
-MIT
