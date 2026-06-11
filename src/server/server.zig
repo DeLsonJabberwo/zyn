@@ -193,3 +193,26 @@ pub const Server = struct {
         return false;
     }
 };
+
+
+test "Server.init + Server.deinit" {
+    const allocator = std.testing.allocator;
+    var server = try Server.init(allocator);
+    defer server.deinit();
+    try server.route(http.Method.GET, "/", error_handlers.notFoundHandler);
+}
+
+test "Server.route" {
+    const allocator = std.testing.allocator;
+    var server = try Server.init(allocator);
+    defer server.deinit();
+    try server.route(http.Method.GET, "/", error_handlers.notFoundHandler);
+    try server.route(http.Method.POST, "/", error_handlers.notFoundHandler);
+    try server.route(http.Method.PUT, "/", error_handlers.notFoundHandler);
+    try server.route(http.Method.PATCH, "/", error_handlers.notFoundHandler);
+    try server.route(http.Method.DELETE, "/", error_handlers.notFoundHandler);
+    try server.route(http.Method.HEAD, "/", error_handlers.notFoundHandler);
+    try server.route(http.Method.OPTIONS, "/", error_handlers.notFoundHandler);
+    try std.testing.expectError(error.InvalidMethod, server.route(http.Method.CONNECT, "/", error_handlers.notFoundHandler));
+    try std.testing.expectError(error.InvalidMethod, server.route(http.Method.TRACE, "/", error_handlers.notFoundHandler));
+}
