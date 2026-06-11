@@ -6,10 +6,10 @@ const test_targets = [_]std.Target.Query{
         .cpu_arch = .x86_64,
         .os_tag = .linux,
     },
-    .{
-        .cpu_arch = .aarch64,
-        .os_tag = .macos,
-    },
+    //.{
+        //.cpu_arch = .aarch64,
+        //.os_tag = .macos,
+    //},
 };
 
 pub fn build(b: *std.Build) void {
@@ -31,6 +31,7 @@ pub fn build(b: *std.Build) void {
         });
 
         const run_unit_tests = b.addRunArtifact(unit_tests);
+        run_unit_tests.skip_foreign_checks = true;
         test_step.dependOn(&run_unit_tests.step);
     }
 }

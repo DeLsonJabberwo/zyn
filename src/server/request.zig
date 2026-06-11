@@ -18,26 +18,33 @@ pub const Request = struct {
     handler: *const Handler,
     params: hash_map.StringHashMap([]const u8),
 
-    pub fn init(allocator: Allocator, req: *http.Server.Request, server: *server_eng.Server, source: []const u8) error{RouteNotFoundError}!*Request {
-        const endpoint_entries = formatting.splitEndpoint(allocator, req.head.target);
-        var request = Request{
+    pub fn init(allocator: Allocator, http_req: *http.Server.Request, server: *server_eng.Server, source: []const u8) error{RouteNotFoundError,OutOfMemory}!*Request {
+        const endpoint_entries = formatting.splitEndpoint(allocator, http_req.head.target);
+        var request = allocator.create(Request);
+        request.* = Request{
             .server = server,
             .source = source,
-            .method = req.head.method,
-            .target = req.head.target,
+            .method = http_req.head.method,
+            .target = http_req.head.target,
             .endpoint = endpoint_entries,
         };
         try request.setParamsRouteHandler(allocator, server);
         return request;
     }
 
-    fn setParamsHandler(r: *Request, allocator: Allocator, server: *server_eng.Server) error{RouteNotFoundError}!void {
-        var routes_key_it = r.server.endpoints.keyIterator();
+    fn setParamsRouteHandler(r: *Request, allocator: Allocator) error{RouteNotFoundError,OutOfMemory}!void {
+        var routes: hash_map.StringHashMap(*const Handler) = undefined;
+        if (r.server.methods.get(r.method)) |map| {
+            routes = map.*;
+        } else {
+            return error.RouteNotFoundError;
+        }
+        var routes_key_it = routes.keyIterator();
         var options = hash_map.StringHashMap([][]const u8).init(allocator);
         var max_length = 0;
         while (routes_key_it.next()) |key| {
-            const endpoint = formatting.splitEndpoint(allocator, key);
-            options.put(key, endpoint);
+            const endpoint = formatting.splitEndpoint(allocator, key.*);
+            try options.put(key.*, endpoint);
             if (endpoint.len > max_length) max_length = endpoint.len;
         }
 
@@ -65,8 +72,8 @@ pub const Request = struct {
                     }
                 }
                 r.params = params;
-                r.route = options.keyIterator().next().? catch return error.RouteNotFoundError;
-                r.handler = server.endpoints.get(options.keyIterator().next().? catch return error.RouteNotFoundError);
+                r.route = (options.keyIterator().next().? orelse return error.RouteNotFoundError).*;
+                r.handler = routes.get(options.keyIterator().next().? orelse return error.RouteNotFoundError);
             }
         } else {
             return error.RouteNotFoundError;

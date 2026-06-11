@@ -4,6 +4,7 @@ const hash_map = std.hash_map;
 
 const Allocator = std.mem.Allocator;
 
+const Request = @import("request.zig").Request;
 const error_handlers = @import("error_handlers.zig");
 const formatting = @import("formatting.zig");
 
@@ -11,22 +12,59 @@ const Handler = fn (Allocator, std.Io, *http.Server.Request) http.Server.Request
 
 pub const Server = struct {
     // TODO: separate by HTTP request method (GET, PUT, POST, UPDATE, DELETE, etc.)
-    endpoints: hash_map.StringHashMap(*const Handler),
+    methods: hash_map.AutoHashMap(http.Method, *hash_map.StringHashMap(*const Handler)),
+    get: hash_map.StringHashMap(*const Handler),
+    post: hash_map.StringHashMap(*const Handler),
+    put: hash_map.StringHashMap(*const Handler),
+    patch: hash_map.StringHashMap(*const Handler),
+    delete: hash_map.StringHashMap(*const Handler),
+    head: hash_map.StringHashMap(*const Handler),
+    options: hash_map.StringHashMap(*const Handler),
     static: hash_map.StringHashMap([]const u8),
 
-    pub fn init(allocator: Allocator) Server {
-        return Server{
-            .endpoints = hash_map.StringHashMap(*const Handler).init(allocator),
+    pub fn init(allocator: Allocator) error{OutOfMemory}!Server {
+        var server = Server{
+            .methods = hash_map.AutoHashMap(http.Method, *hash_map.StringHashMap(*const Handler)).init(allocator),
+            .get = hash_map.StringHashMap(*const Handler).init(allocator),
+            .post = hash_map.StringHashMap(*const Handler).init(allocator),
+            .put = hash_map.StringHashMap(*const Handler).init(allocator),
+            .patch = hash_map.StringHashMap(*const Handler).init(allocator),
+            .delete = hash_map.StringHashMap(*const Handler).init(allocator),
+            .head = hash_map.StringHashMap(*const Handler).init(allocator),
+            .options = hash_map.StringHashMap(*const Handler).init(allocator),
             .static = hash_map.StringHashMap([]const u8).init(allocator),
         };
+        try server.methods.put(http.Method.GET, &server.get);
+        try server.methods.put(http.Method.POST, &server.post);
+        try server.methods.put(http.Method.PUT, &server.put);
+        try server.methods.put(http.Method.PATCH, &server.patch);
+        try server.methods.put(http.Method.DELETE, &server.delete);
+        try server.methods.put(http.Method.HEAD, &server.head);
+        try server.methods.put(http.Method.OPTIONS, &server.options);
+        return server;
     }
 
-    pub fn deinit(r: *Server) void {
-        r.endpoints.deinit();
-        r.static.deinit();
+    pub fn deinit(s: *Server) void {
+        s.methods.deinit();
+        s.get.deinit();
+        s.post.deinit();
+        s.put.deinit();
+        s.patch.deinit();
+        s.delete.deinit();
+        s.head.deinit();
+        s.options.deinit();
+        s.static.deinit();
     }
 
-    pub fn run(r: *Server, allocator: Allocator, io: std.Io, port: u16) !void {
+    pub fn route(s: *Server, method: http.Method, endpoint: []const u8, handler: *const Handler) error{InvalidMethod,OutOfMemory}!void {
+        if (s.methods.get(method)) |map| {
+            try map.put(endpoint, handler);
+        } else {
+            return error.InvalidMethod;
+        }
+    }
+
+    pub fn run(s: *Server, allocator: Allocator, io: std.Io, port: u16) !void {
         const LISTEN_ADDR: []const u8 = "0.0.0.0";
         const addr = try std.Io.net.IpAddress.parseIp4(LISTEN_ADDR, port);
         var listener = try addr.listen(io, .{ .reuse_address = true });
@@ -55,7 +93,7 @@ pub const Server = struct {
             var writer = stream.writer(io, &write_buffer);
 
             var http_server = http.Server.init(&reader.interface, &writer.interface); 
-            var req = http_server.receiveHead() catch |err| {
+            var http_req = http_server.receiveHead() catch |err| {
                 std.debug.print("error: {}\n\n", .{err});
                 continue;
             };
@@ -64,25 +102,15 @@ pub const Server = struct {
             const start_mono = std.Io.Clock.awake.now(io);
 
             var respond_options = http.Server.Request.RespondOptions{};
-            const target: []const u8 = req.head.target;
-            if (r.serveStatic(allocator, io, &req)) {
+            const target: []const u8 = http_req.head.target;
+            if (s.serveStatic(allocator, io, &http_req)) {
                 respond_options = http.Server.Request.RespondOptions{.status = .ok};
             } else {
-                var endpoint = target;
-                while (std.mem.findLast(u8, endpoint, "#")) |index| {
-                    if (endpoint[index - 1] != '%') {
-                        endpoint = endpoint[0..index];
-                    }
-                }
-                while (std.mem.findLast(u8, endpoint, "?")) |index| {
-                    if (endpoint[index - 1] != '%') {
-                        endpoint = endpoint[0..index];
-                    }
-                }
-                if (r.endpoints.get(endpoint)) |handler| {
-                    respond_options = handler(allocator, io, &req);
-                } else {
-                    respond_options = error_handlers.notFoundHandler(allocator, io, &req);
+                if (Request.init(allocator, &http_req, s, source)) |request| {
+                    respond_options = request.handler(allocator, io, &http_req);
+                } else |err| switch (err) {
+                    error.RouteNotFoundError => respond_options = error_handlers.notFoundHandler(allocator, io, &http_req),
+                    error.OutOfMemory => return error.OutOfMemory,
                 }
             }
             const end_mono = std.Io.Clock.awake.now(io);
@@ -111,22 +139,22 @@ pub const Server = struct {
                 @intFromEnum(respond_options.status),
                 duration_str,
                 source,
-                @tagName(req.head.method),
+                @tagName(http_req.head.method),
                 target,
             });
         }
     }
 
-    pub fn addStatic(r: *Server, io: std.Io, fs_path: []const u8, virt_path: []const u8) void {
+    pub fn addStatic(s: *Server, io: std.Io, fs_path: []const u8, virt_path: []const u8) void {
         var dir = std.Io.Dir.cwd().openDir(io, fs_path, .{}) catch return;
         dir.close(io);
-        r.static.put(virt_path, fs_path) catch return;
+        s.static.put(virt_path, fs_path) catch return;
     }
 
-    pub fn serveStatic(r: *Server, allocator: Allocator, io: std.Io, req: *http.Server.Request) bool {
+    pub fn serveStatic(s: *Server, allocator: Allocator, io: std.Io, req: *http.Server.Request) bool {
         var endpoint = formatting.cleanEndpoint(req.head.target);
 
-        var static_it = r.static.iterator();
+        var static_it = s.static.iterator();
         while (static_it.next()) |entry| {
             const virt_path = entry.key_ptr.*;
             const fs_path = entry.value_ptr.*;
