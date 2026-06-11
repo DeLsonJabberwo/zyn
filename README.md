@@ -50,7 +50,7 @@ pub fn main() !void {
     var server = zyn.Server.init(allocator);
     defer server.deinit();
 
-    try server.endpoints.put("/hello", &helloHandler);
+    try server.route(std.http.Method.PUT, "/hello", &helloHandler);
 
     try server.run(allocator, io, 8080);
 }
@@ -81,12 +81,14 @@ const output = try zyn.formatBuf(allocator, "Hello, {{ name }}!", vals);
 | `Server`      | HTTP server with routing and static file serving |
 | `Request`     | Request wrapper (route params, metadata)         |
 | `formatBuf`   | Simple `{{key}}` string replacement templating   |
+| `notFoundHandler` | Handler for 404 not found errors |
+| `internalServerErrorHandler` | Handler for 500 internal server errors |
 
 ## Build & Test
 
 ```bash
 zig build          # Build the module
-zig build test     # Run tests (native, x86_64-linux, aarch64-macos)
+zig build test     # Run tests (native, x86_64-linux)
 ```
 
 ## License
