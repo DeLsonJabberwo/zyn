@@ -7,71 +7,93 @@ const Allocator = std.mem.Allocator;
 const Request = @import("request.zig").Request;
 const error_handlers = @import("error_handlers.zig");
 const formatting = @import("formatting.zig");
+const Route = @import("route.zig").Route;
 
 const Handler = fn (Allocator, std.Io, *http.Server.Request) http.Server.Request.RespondOptions;
 
 pub const Server = struct {
-    // TODO: separate by HTTP request method (GET, PUT, POST, UPDATE, DELETE, etc.)
-    methods: hash_map.AutoHashMap(http.Method, *hash_map.StringHashMap(*const Handler)),
-    get: hash_map.StringHashMap(*const Handler),
-    post: hash_map.StringHashMap(*const Handler),
-    put: hash_map.StringHashMap(*const Handler),
-    patch: hash_map.StringHashMap(*const Handler),
-    delete: hash_map.StringHashMap(*const Handler),
-    head: hash_map.StringHashMap(*const Handler),
-    options: hash_map.StringHashMap(*const Handler),
-    static: hash_map.StringHashMap([]const u8),
+    allocator: Allocator,
+    methods: *hash_map.AutoHashMap(http.Method, *hash_map.StringHashMap(*const Handler)),
+    get: *hash_map.StringHashMap(*const Handler),
+    post: *hash_map.StringHashMap(*const Handler),
+    put: *hash_map.StringHashMap(*const Handler),
+    patch: *hash_map.StringHashMap(*const Handler),
+    delete: *hash_map.StringHashMap(*const Handler),
+    head: *hash_map.StringHashMap(*const Handler),
+    options: *hash_map.StringHashMap(*const Handler),
+    static: *hash_map.StringHashMap([]const u8),
 
     pub fn init(allocator: Allocator) error{OutOfMemory}!Server {
         var server = Server{
-            .methods = hash_map.AutoHashMap(http.Method, *hash_map.StringHashMap(*const Handler)).init(allocator),
-            .get = hash_map.StringHashMap(*const Handler).init(allocator),
-            .post = hash_map.StringHashMap(*const Handler).init(allocator),
-            .put = hash_map.StringHashMap(*const Handler).init(allocator),
-            .patch = hash_map.StringHashMap(*const Handler).init(allocator),
-            .delete = hash_map.StringHashMap(*const Handler).init(allocator),
-            .head = hash_map.StringHashMap(*const Handler).init(allocator),
-            .options = hash_map.StringHashMap(*const Handler).init(allocator),
-            .static = hash_map.StringHashMap([]const u8).init(allocator),
+            .allocator = allocator,
+            .methods = try allocator.create(hash_map.AutoHashMap(http.Method, *Route)),
+            .get = try allocator.create(hash_map.StringHashMap(*const Handler)),
+            .post = try allocator.create(hash_map.StringHashMap(*const Handler)),
+            .put = try allocator.create(hash_map.StringHashMap(*const Handler)),
+            .patch = try allocator.create(hash_map.StringHashMap(*const Handler)),
+            .delete = try allocator.create(hash_map.StringHashMap(*const Handler)),
+            .head = try allocator.create(hash_map.StringHashMap(*const Handler)),
+            .options = try allocator.create(hash_map.StringHashMap(*const Handler)),
+            .static = try allocator.create(hash_map.StringHashMap([]const u8)),
         };
-        try server.methods.put(http.Method.GET, &server.get);
-        try server.methods.put(http.Method.POST, &server.post);
-        try server.methods.put(http.Method.PUT, &server.put);
-        try server.methods.put(http.Method.PATCH, &server.patch);
-        try server.methods.put(http.Method.DELETE, &server.delete);
-        try server.methods.put(http.Method.HEAD, &server.head);
-        try server.methods.put(http.Method.OPTIONS, &server.options);
+        server.methods.* = hash_map.AutoHashMap(http.Method, *hash_map.StringHashMap(*const Handler)).init(allocator);
+        server.get.* = hash_map.StringHashMap(*const Handler).init(allocator);
+        server.post.* = hash_map.StringHashMap(*const Handler).init(allocator);
+        server.put.* = hash_map.StringHashMap(*const Handler).init(allocator);
+        server.patch.* = hash_map.StringHashMap(*const Handler).init(allocator);
+        server.delete.* = hash_map.StringHashMap(*const Handler).init(allocator);
+        server.head.* = hash_map.StringHashMap(*const Handler).init(allocator);
+        server.options.* = hash_map.StringHashMap(*const Handler).init(allocator);
+        server.static.* = hash_map.StringHashMap([]const u8).init(allocator);
+        try server.methods.put(http.Method.GET, server.get);
+        try server.methods.put(http.Method.POST, server.post);
+        try server.methods.put(http.Method.PUT, server.put);
+        try server.methods.put(http.Method.PATCH, server.patch);
+        try server.methods.put(http.Method.DELETE, server.delete);
+        try server.methods.put(http.Method.HEAD, server.head);
+        try server.methods.put(http.Method.OPTIONS, server.options);
         return server;
     }
 
     pub fn deinit(s: *Server) void {
         s.methods.deinit();
+        s.allocator.destroy(s.methods);
         s.get.deinit();
+        s.allocator.destroy(s.get);
         s.post.deinit();
+        s.allocator.destroy(s.post);
         s.put.deinit();
+        s.allocator.destroy(s.put);
         s.patch.deinit();
+        s.allocator.destroy(s.patch);
         s.delete.deinit();
+        s.allocator.destroy(s.delete);
         s.head.deinit();
+        s.allocator.destroy(s.head);
         s.options.deinit();
+        s.allocator.destroy(s.options);
         s.static.deinit();
+        s.allocator.destroy(s.static);
     }
 
     pub fn route(s: *Server, method: http.Method, endpoint: []const u8, handler: *const Handler) error{InvalidMethod,OutOfMemory}!void {
         if (s.methods.get(method)) |map| {
             try map.put(endpoint, handler);
+            std.debug.print("[ZYN]\tRegistered route {s}: {s}\n", .{@tagName(method), endpoint});
         } else {
             return error.InvalidMethod;
         }
     }
 
-    pub fn run(s: *Server, allocator: Allocator, io: std.Io, port: u16) !void {
+    pub fn run(s: *Server, allocator: Allocator, io: std.Io, port: u16) error{Ip4ParseError,ListenError,AcceptError,OutOfMemory}!void {
         const LISTEN_ADDR: []const u8 = "0.0.0.0";
-        const addr = try std.Io.net.IpAddress.parseIp4(LISTEN_ADDR, port);
-        var listener = try addr.listen(io, .{ .reuse_address = true });
+        const addr = std.Io.net.IpAddress.parseIp4(LISTEN_ADDR, port) catch return error.Ip4ParseError;
+        var listener = addr.listen(io, .{ .reuse_address = true }) catch return error.ListenError;
         defer listener.deinit(io);
+        std.debug.print("[ZYN]\tServer running on port {d}.\n", .{port});
 
         while (true) {
-            var stream = try listener.accept(io);
+            var stream = listener.accept(io) catch return error.AcceptError;
             defer stream.close(io);
             const remote_addr = stream.socket.address;
             var source_buf: [64]u8 = undefined;
@@ -107,9 +129,12 @@ pub const Server = struct {
                 respond_options = http.Server.Request.RespondOptions{.status = .ok};
             } else {
                 if (Request.init(allocator, &http_req, s, source)) |request| {
-                    respond_options = request.handler(allocator, io, &http_req);
+                    const req_method = s.methods.get(request.method).?;
+                    const req_handler = req_method.get(request.route).?;
+                    respond_options = req_handler(allocator, io, &http_req);
                 } else |err| switch (err) {
                     error.RouteNotFoundError => respond_options = error_handlers.notFoundHandler(allocator, io, &http_req),
+                    error.InvalidEndpoint => respond_options = error_handlers.notFoundHandler(allocator, io, &http_req),
                     error.OutOfMemory => return error.OutOfMemory,
                 }
             }
