@@ -14,21 +14,37 @@ pub const Request = struct {
     method: http.Method,
     target: []const u8,
     route: []const u8,
+    handler: *const Handler,
     params: hash_map.StringHashMap([]const u8),
 
-    pub fn init(allocator: Allocator, http_req: *http.Server.Request, server: *Server, source: []const u8) error{RouteNotFoundError,InvalidEndpoint,OutOfMemory}!*Request {
+    pub fn init(allocator: Allocator, http_req: *http.Server.Request, server: *Server, source: []const u8) error{RouteNotFoundError,InvalidEndpoint,InvalidMethod,OutOfMemory}!*Request {
         var request = try allocator.create(Request);
+        errdefer allocator.destroy(request);
         request.* = Request{
             .server = server,
             .source = source,
             .method = http_req.head.method,
             .target = http_req.head.target,
             .route = undefined,
+            .handler = undefined,
             .params = undefined,
         };
         const target_entries = try formatting.splitEndpoint(allocator, http_req.head.target);
-        try request.setParamsRoute(allocator, target_entries);
+        defer allocator.free(target_entries);
+        request.route = try std.mem.join(allocator, '/', target_entries);
+        if (server.methods.get(request.method)) |tree| {
+            request.handler = try tree.matchRoute(target_entries);
+            request.params = try request.matchParams(allocator);
+        } else {
+            return error.InvalidMethod;
+        }
         return request;
+    }
+
+    pub fn deinit(r: *Request, allocator: Allocator) void {
+        allocator.free(r.route);
+        r.params.deinit();
+        allocator.destroy(r);
     }
 
     fn setParamsRoute(r: *Request, allocator: Allocator, target_entries: [][]const u8) error{RouteNotFoundError,InvalidEndpoint,OutOfMemory}!void {
@@ -78,5 +94,24 @@ pub const Request = struct {
         } else {
             return error.RouteNotFoundError;
         }
+    }
+
+    fn matchParams(r: *Request, allocator: Allocator) error{InvalidEndpoint,OutOfMemory}!hash_map.StringHashMap([]const u8) {
+        if (r.server.methods.get(r.method)) |tree| {
+            const param_inds_opt = try tree.findParamInds(allocator, 0, r.handler);
+            var params = hash_map.StringHashMap([]const u8).init(allocator);
+            if (!param_inds_opt) {
+                return params;
+            }
+            const param_inds = param_inds_opt.?;
+            defer param_inds.deinit();
+            const target_entries = try formatting.splitEndpoint(allocator, r.target);
+            defer allocator.free(target_entries);
+            var param_inds_it = param_inds.iterator();
+            while (param_inds_it.next()) |entry| {
+                try params.put(entry.value_ptr.*, target_entries[entry.key_ptr.*]);
+            }
+            return params;
+        } else unreachable;
     }
 };

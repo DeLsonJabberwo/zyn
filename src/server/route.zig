@@ -20,7 +20,7 @@ const Handler = fn (Allocator, std.Io, *http.Server.Request) http.Server.Request
 pub const Route = struct {
     segment: ?[]const u8,
     sub_routes: hash_map.AutoHashMap([]const u8, *Route),
-    handler: ?*Handler,
+    handler: ?*const Handler,
 
     pub fn init(allocator: Allocator) error{OutOfMemory}!*Route {
         const root = try allocator.create(Route);
@@ -44,7 +44,7 @@ pub const Route = struct {
 
     /// WARNING: RECURSIVE
     /// Intended to be called on the root Route. Traverses the tree recursively. External calls to internal segments could violate tree structure intention.
-    pub fn addRoute(r: *Route, allocator: Allocator, remaining_segments: [][]const u8, handler: *Handler) error{OutOfMemory,InvalidRouteError}!void {
+    pub fn addRoute(r: *Route, allocator: Allocator, remaining_segments: [][]const u8, handler: *const Handler) error{OutOfMemory,InvalidRouteError}!void {
         if (remaining_segments.len == 0) {
             return error.InvalidRouteError;
         }
@@ -65,11 +65,15 @@ pub const Route = struct {
 
     /// WARNING: RECURSIVE
     /// Intended to be called on the root Route. Traverses the tree recursively. External calls to internal segments could violate tree structure intention.
-    pub fn matchRoute(r: *Route, remaining_segments: [][]const u8) error{RouteNotFoundError}!?*Handler {
+    pub fn matchRoute(r: *Route, remaining_segments: [][]const u8) error{RouteNotFoundError}!*const Handler {
         if (r.segment) |segment| {
             if (std.mem.eql(u8, segment, remaining_segments[0]) or (segment.len > 0 and segment[0] == ':')) {
                 if (remaining_segments.len == 1) {
-                    return r.handler;
+                    if (r.handler) |h| {
+                        return h;
+                    } else {
+                        return error.RouteNotFoundError;
+                    }
                 } else if (r.sub_routes.get(remaining_segments[1])) |sub_route| {
                     return sub_route.matchRoute(remaining_segments[1..]);
                 } else {
@@ -106,10 +110,11 @@ pub const Route = struct {
 
     /// WARNING: RECURSIVE
     /// Intended to be called on the root Route. Traverses the tree recursively. External calls to internal segments could violate tree structure intention.
+    /// When calling on root Route, pass 0 for `ind`
     /// If the handler has no parameters, returns an empty map.
     /// If the handler is not present in this subtree, returns an empty map.
     /// The caller is responsible for first confirming the route exists via `matchRoute`.
-    pub fn findParamInds(r: *Route, allocator: Allocator, ind: usize, handler: *Handler) error{OutOfMemory}!?hash_map.AutoHashMap(usize, []const u8) {
+    pub fn findParamInds(r: *Route, allocator: Allocator, ind: usize, handler: *const Handler) error{OutOfMemory}!?hash_map.AutoHashMap(usize, []const u8) {
         var params = hash_map.AutoHashMap(usize, []const u8).init(allocator);
         if (r.segment) |segment| {
             if (segment.len > 0 and segment[0] == ':') {
@@ -122,8 +127,7 @@ pub const Route = struct {
             }
         } else if (r.sub_routes.count() == 0) {
             params.deinit();
-            params = hash_map.AutoHashMap(usize, []const u8).init(allocator);
-            return params;
+            return null;
         }
         var sub_it = r.sub_routes.valueIterator();
         while (sub_it.next()) |value| {
