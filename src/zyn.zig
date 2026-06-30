@@ -9,4 +9,5 @@ test {
     _ = @import("tests/formatting.zig");
     _ = @import("tests/buffer.zig");
     _ = @import("tests/server.zig");
+    _ = @import("tests/route.zig");
 }

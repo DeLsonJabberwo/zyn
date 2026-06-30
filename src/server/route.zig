@@ -116,6 +116,7 @@ pub const Route = struct {
     /// The caller is responsible for first confirming the route exists via `matchRoute`.
     pub fn findParamInds(r: *Route, allocator: Allocator, ind: usize, handler: *const Handler) error{OutOfMemory}!?hash_map.AutoHashMap(usize, []const u8) {
         var params = hash_map.AutoHashMap(usize, []const u8).init(allocator);
+        errdefer params.deinit();
         if (r.segment) |segment| {
             if (segment.len > 0 and segment[0] == ':') {
                 try params.put(ind, segment[1..]);
@@ -131,12 +132,14 @@ pub const Route = struct {
         }
         var sub_it = r.sub_routes.valueIterator();
         while (sub_it.next()) |value| {
-            if (try value.findParamInds(allocator, ind+1, handler)) |result| {
-                var result_it = result.iterator();
+            if (try value.*.findParamInds(allocator, ind+1, handler)) |result| {
+                var result_mut = result;
+                errdefer result_mut.deinit();
+                var result_it = result_mut.iterator();
                 while (result_it.next()) |entry| {
                     try params.put(entry.key_ptr.*, entry.value_ptr.*);
                 }
-                result.deinit();
+                result_mut.deinit();
                 break;
             }
         }
