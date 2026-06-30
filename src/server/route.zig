@@ -19,14 +19,14 @@ const Handler = fn (Allocator, std.Io, *http.Server.Request) http.Server.Request
 /// `segment` or `sub_routes` can break internal invariants.
 pub const Route = struct {
     segment: ?[]const u8,
-    sub_routes: hash_map.AutoHashMap([]const u8, *Route),
+    sub_routes: hash_map.StringHashMap(*Route),
     handler: ?*const Handler,
 
     pub fn init(allocator: Allocator) error{OutOfMemory}!*Route {
         const root = try allocator.create(Route);
         root.* = .{
             .segment = null,
-            .sub_routes = hash_map.AutoHashMap([]const u8, *Route).init(allocator),
+            .sub_routes = hash_map.StringHashMap(*Route).init(allocator),
             .handler = null,
         };
         return root;
@@ -35,8 +35,7 @@ pub const Route = struct {
     pub fn deinit(r: *Route, allocator: Allocator) void {
         var sub_it = r.sub_routes.valueIterator();
         while (sub_it.next()) |value| {
-            value.*.deinit();
-            allocator.destroy(value.*);
+            value.*.deinit(allocator);
         }
         r.sub_routes.deinit();
         allocator.destroy(r);
@@ -49,18 +48,23 @@ pub const Route = struct {
             return error.InvalidRouteError;
         }
         if (r.sub_routes.get(remaining_segments[0])) |sub_route| {
-            return sub_route.addRoute(allocator, remaining_segments[1..], handler);
-        } else {
-            var new_route = try Route.init(allocator);
-            new_route.segment = remaining_segments[0];
-            if (remaining_segments.len == 1) {
-                new_route.handler = handler;
+            const new_remaining = remaining_segments[1..];
+            if (new_remaining.len > 0) {
+                return sub_route.addRoute(allocator, new_remaining, handler);
             } else {
-                try new_route.addRoute(allocator, remaining_segments[1..], handler);
+                sub_route.handler = handler;
+                return;
             }
-            try r.sub_routes.put(remaining_segments[0], new_route);
-            return;
         }
+        var new_route = try Route.init(allocator);
+        new_route.segment = remaining_segments[0];
+        if (remaining_segments.len == 1) {
+            new_route.handler = handler;
+        } else {
+            try new_route.addRoute(allocator, remaining_segments[1..], handler);
+        }
+        try r.sub_routes.put(remaining_segments[0], new_route);
+        return;
     }
 
     /// WARNING: RECURSIVE
@@ -81,9 +85,7 @@ pub const Route = struct {
                     while (sub_it.next()) |entry| {
                         if (entry.key_ptr.*.len > 0 and entry.key_ptr.*[0] == ':') {
                             const handler = entry.value_ptr.*.matchRoute(remaining_segments[1..]) catch continue;
-                            if (handler) |h| {
-                                return h;
-                            }
+                            return handler;
                         }
                     }
                     return error.RouteNotFoundError;
@@ -99,9 +101,7 @@ pub const Route = struct {
             while (sub_it.next()) |entry| {
                 if (entry.key_ptr.*.len > 0 and entry.key_ptr.*[0] == ':') {
                     const handler = entry.value_ptr.*.matchRoute(remaining_segments[0..]) catch continue;
-                    if (handler) |h| {
-                        return h;
-                    }
+                    return handler;
                 }
             }
             return error.RouteNotFoundError;

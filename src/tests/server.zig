@@ -7,14 +7,14 @@ const formatting = @import("../server/formatting.zig");
 test "Server.init + Server.deinit" {
     const allocator = std.testing.allocator;
     var server = try Server.init(allocator);
-    defer server.deinit();
+    defer server.deinit(allocator);
     try server.route(allocator, http.Method.GET, "/", error_handlers.notFoundHandler);
 }
 
 test "Server.route" {
     const allocator = std.testing.allocator;
     var server = try Server.init(allocator);
-    defer server.deinit();
+    defer server.deinit(allocator);
     try server.route(allocator, http.Method.GET, "/", error_handlers.notFoundHandler);
     const split = try formatting.splitEndpoint(allocator, "/");
     defer allocator.free(split);
