@@ -31,7 +31,8 @@ pub const Request = struct {
         };
         const target_entries = try formatting.splitEndpoint(allocator, http_req.head.target);
         defer allocator.free(target_entries);
-        request.route = try std.mem.join(allocator, '/', target_entries);
+        request.route = try std.mem.join(allocator, "/", target_entries);
+        errdefer allocator.free(request.route);
         if (server.methods.get(request.method)) |tree| {
             request.handler = try tree.matchRoute(target_entries);
             request.params = try request.matchParams(allocator);
@@ -100,10 +101,10 @@ pub const Request = struct {
         if (r.server.methods.get(r.method)) |tree| {
             const param_inds_opt = try tree.findParamInds(allocator, 0, r.handler);
             var params = hash_map.StringHashMap([]const u8).init(allocator);
-            if (!param_inds_opt) {
+            if (param_inds_opt == null) {
                 return params;
             }
-            const param_inds = param_inds_opt.?;
+            var param_inds = param_inds_opt.?;
             defer param_inds.deinit();
             const target_entries = try formatting.splitEndpoint(allocator, r.target);
             defer allocator.free(target_entries);

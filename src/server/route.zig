@@ -130,9 +130,10 @@ pub const Route = struct {
             params.deinit();
             return null;
         }
+        const child_ind = if (r.segment) |_| ind + 1 else ind;
         var sub_it = r.sub_routes.valueIterator();
         while (sub_it.next()) |value| {
-            if (try value.*.findParamInds(allocator, ind+1, handler)) |result| {
+            if (try value.*.findParamInds(allocator, child_ind, handler)) |result| {
                 var result_mut = result;
                 errdefer result_mut.deinit();
                 var result_it = result_mut.iterator();

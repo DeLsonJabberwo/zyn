@@ -167,10 +167,7 @@ test "Route.findParamInds single parameter" {
     var param_inds = param_inds_opt.?;
     defer param_inds.deinit();
     try std.testing.expectEqual(1, param_inds.count());
-    // NOTE: the current implementation returns index 1 here because the root
-    // node increments the index before checking the first child. A corrected
-    // implementation would likely return index 0 for the first segment.
-    try std.testing.expectEqualStrings("id", param_inds.get(1).?);
+    try std.testing.expectEqualStrings("id", param_inds.get(0).?);
 }
 
 test "Route.findParamInds multiple parameters" {
@@ -189,8 +186,8 @@ test "Route.findParamInds multiple parameters" {
     try std.testing.expectEqual(2, param_inds.count());
     // NOTE: see the comment in the single-parameter test about the current
     // index offset produced by the root node.
-    try std.testing.expectEqualStrings("id", param_inds.get(2).?);
-    try std.testing.expectEqualStrings("postId", param_inds.get(4).?);
+    try std.testing.expectEqualStrings("id", param_inds.get(1).?);
+    try std.testing.expectEqualStrings("postId", param_inds.get(3).?);
 }
 
 test "Route.findParamInds missing handler" {
