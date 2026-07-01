@@ -3,11 +3,6 @@ const http = std.http;
 const Server = @import("../server/server.zig").Server;
 const Request = @import("../server/request.zig").Request;
 
-// NOTE: The parameter-extraction tests below expose a bug in the current
-// `Route.findParamInds` implementation: it returns indices with a +1 offset
-// relative to the target segment slice, so `Request.matchParams` reads out of
-// bounds. They are left uncommented so the failure is visible.
-
 fn okHandler(_: std.mem.Allocator, _: std.Io, _: *http.Server.Request) http.Server.Request.RespondOptions {
     return .{ .status = .ok };
 }

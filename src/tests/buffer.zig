@@ -99,4 +99,14 @@ test formatBuf {
         defer allocator.free(result);
         try std.testing.expectEqualStrings(expected, result);
     }
+    // Empty buffer.
+    {
+        const inputBuf = "";
+        const expected = "";
+        var vals = std.hash_map.StringHashMap([]const u8).init(allocator);
+        defer vals.deinit();
+        const result = try formatBuf(allocator, inputBuf, vals);
+        defer allocator.free(result);
+        try std.testing.expectEqualStrings(expected, result);
+    }
 }

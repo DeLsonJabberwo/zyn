@@ -4,16 +4,23 @@ const Allocator = std.mem.Allocator;
 
 pub fn cleanEndpoint(target: []const u8) []const u8 {
     var endpoint = target;
-    while (std.mem.findLast(u8, endpoint, "#")) |index| {
-        if (endpoint[index - 1] != '%') {
-            endpoint = endpoint[0..index];
+
+    var i: usize = 0;
+    while (i < endpoint.len) : (i += 1) {
+        if (endpoint[i] == '#' and (i == 0 or endpoint[i - 1] != '%')) {
+            endpoint = endpoint[0..i];
+            break;
         }
     }
-    while (std.mem.findLast(u8, endpoint, "?")) |index| {
-        if (endpoint[index - 1] != '%') {
-            endpoint = endpoint[0..index];
+
+    i = 0;
+    while (i < endpoint.len) : (i += 1) {
+        if (endpoint[i] == '?' and (i == 0 or endpoint[i - 1] != '%')) {
+            endpoint = endpoint[0..i];
+            break;
         }
     }
+
     return endpoint;
 }
 
