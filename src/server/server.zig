@@ -22,6 +22,9 @@ pub const Server = struct {
     head: *Route,
     options: *Route,
     static: *hash_map.StringHashMap([]const u8),
+    running: std.atomic.Value(bool),
+    listening: std.atomic.Value(bool),
+    bound_port: u16,
 
     pub fn init(allocator: Allocator) error{OutOfMemory}!Server {
         var server = Server{
@@ -35,6 +38,9 @@ pub const Server = struct {
             .head = try Route.init(allocator),
             .options = try Route.init(allocator),
             .static = try allocator.create(hash_map.StringHashMap([]const u8)),
+            .running = std.atomic.Value(bool).init(true),
+            .listening = std.atomic.Value(bool).init(false),
+            .bound_port = 0,
         };
         server.methods.* = hash_map.AutoHashMap(http.Method, *Route).init(allocator);
         server.static.* = hash_map.StringHashMap([]const u8).init(allocator);
@@ -81,9 +87,11 @@ pub const Server = struct {
         const addr = std.Io.net.IpAddress.parseIp4(LISTEN_ADDR, port) catch return error.Ip4ParseError;
         var listener = addr.listen(io, .{ .reuse_address = true }) catch return error.ListenError;
         defer listener.deinit(io);
-        std.debug.print("[ZYN]\tServer running on port {d}.\n", .{port});
+        s.bound_port = listener.socket.address.getPort();
+        s.listening.store(true, .release);
+        std.debug.print("[ZYN]\tServer running on port {d}.\n", .{s.bound_port});
 
-        while (true) {
+        while (s.running.load(.acquire)) {
             var stream = listener.accept(io) catch return error.AcceptError;
             defer stream.close(io);
             const remote_addr = stream.socket.address;
@@ -159,6 +167,18 @@ pub const Server = struct {
                 target,
             });
         }
+    }
+
+    pub fn stop(s: *Server, io: std.Io) void {
+        const port = s.bound_port;
+        s.running.store(false, .release);
+        const addr = std.Io.net.IpAddress.parseIp4("127.0.0.1", port) catch return;
+        const stream = addr.connect(io, .{ .mode = .stream }) catch return;
+        var write_buf: [256]u8 = undefined;
+        var writer = stream.writer(io, &write_buf);
+        writer.interface.writeAll("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n") catch {};
+        writer.interface.flush() catch {};
+        stream.close(io);
     }
 
     pub fn addStatic(s: *Server, io: std.Io, fs_path: []const u8, virt_path: []const u8) void {

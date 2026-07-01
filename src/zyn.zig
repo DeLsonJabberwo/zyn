@@ -11,4 +11,5 @@ test {
     _ = @import("tests/server.zig");
     _ = @import("tests/route.zig");
     _ = @import("tests/request.zig");
+    _ = @import("tests/integration.zig");
 }
