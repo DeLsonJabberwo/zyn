@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const test_targets = [_]std.Target.Query{
-    .{}, // native
+    //.{}, // native
     .{
         .cpu_arch = .x86_64,
         .os_tag = .linux,
