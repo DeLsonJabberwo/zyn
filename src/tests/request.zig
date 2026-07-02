@@ -2,6 +2,7 @@ const std = @import("std");
 const http = std.http;
 const Server = @import("../server/server.zig").Server;
 const Request = @import("../server/request.zig").Request;
+const Logger = @import("../logger.zig").Logger;
 
 fn okHandler(_: std.mem.Allocator, _: std.Io, _: *http.Server.Request) http.Server.Request.RespondOptions {
     return .{ .status = .ok };
@@ -29,7 +30,9 @@ fn makeRequest(
 
 test "Request.init + Request.deinit" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/", &okHandler);
@@ -41,7 +44,9 @@ test "Request.init + Request.deinit" {
 
 test "Request.init matches root route" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/", &okHandler);
@@ -57,7 +62,9 @@ test "Request.init matches root route" {
 
 test "Request.init matches exact route" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/hello", &okHandler);
@@ -73,7 +80,9 @@ test "Request.init matches exact route" {
 
 test "Request.init matches nested exact route" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/hello/world", &okHandler);
@@ -89,7 +98,9 @@ test "Request.init matches nested exact route" {
 
 test "Request.init duplicate route uses latest handler" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/hello", &okHandler);
@@ -104,7 +115,9 @@ test "Request.init duplicate route uses latest handler" {
 
 test "Request.init route not found" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/foo", &okHandler);
@@ -115,7 +128,9 @@ test "Request.init route not found" {
 
 test "Request.init trailing segment mismatch" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/user/:id/profile", &okHandler);
@@ -126,7 +141,9 @@ test "Request.init trailing segment mismatch" {
 
 test "Request.init invalid endpoint" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/hello", &okHandler);
@@ -137,7 +154,9 @@ test "Request.init invalid endpoint" {
 
 test "Request.init invalid method" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/hello", &okHandler);
@@ -148,7 +167,9 @@ test "Request.init invalid method" {
 
 test "Request.init prefers exact route over parameter" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/user/me", &okHandler);
@@ -164,7 +185,9 @@ test "Request.init prefers exact route over parameter" {
 
 test "Request.init single parameter" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/:id", &okHandler);
@@ -179,7 +202,9 @@ test "Request.init single parameter" {
 
 test "Request.init multiple parameters" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/user/:id/posts/:postId", &okHandler);

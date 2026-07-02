@@ -1,6 +1,7 @@
 const std = @import("std");
 const http = std.http;
 const Server = @import("../server/server.zig").Server;
+const Logger = @import("../logger.zig").Logger;
 
 fn pingHandler(_: std.mem.Allocator, _: std.Io, req: *http.Server.Request) http.Server.Request.RespondOptions {
     req.respond("pong", .{ .status = .ok }) catch unreachable;
@@ -24,7 +25,9 @@ fn waitForServer(server: *Server) !void {
 
 test "run serves routes and static files" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
 
     try server.route(allocator, .GET, "/ping", &pingHandler);

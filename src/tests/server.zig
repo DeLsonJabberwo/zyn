@@ -1,19 +1,24 @@
 const std = @import("std");
 const http = std.http;
 const Server = @import("../server/server.zig").Server;
+const Logger = @import("../logger.zig").Logger;
 const error_handlers = @import("../server/error_handlers.zig");
 const formatting = @import("../server/formatting.zig");
 
 test "Server.init + Server.deinit" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
     try server.route(allocator, http.Method.GET, "/", error_handlers.notFoundHandler);
 }
 
 test "Server.route" {
     const allocator = std.testing.allocator;
-    var server = try Server.init(allocator);
+    var logger = try Logger.init(std.testing.io, .discarding, allocator);
+    defer logger.deinit(allocator);
+    var server = try Server.init(allocator, logger);
     defer server.deinit(allocator);
     try server.route(allocator, http.Method.GET, "/", error_handlers.notFoundHandler);
     const split = try formatting.splitEndpoint(allocator, "/");

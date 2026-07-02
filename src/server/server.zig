@@ -8,11 +8,13 @@ const Request = @import("request.zig").Request;
 const error_handlers = @import("error_handlers.zig");
 const formatting = @import("formatting.zig");
 const Route = @import("route.zig").Route;
+const Logger = @import("../logger.zig").Logger;
 
 pub const Handler = fn (Allocator, std.Io, *http.Server.Request) http.Server.Request.RespondOptions;
 
 pub const Server = struct {
     allocator: Allocator,
+    logger: Logger,
     methods: *hash_map.AutoHashMap(http.Method, *Route),
     get: *Route,
     post: *Route,
@@ -26,9 +28,10 @@ pub const Server = struct {
     listening: std.atomic.Value(bool),
     bound_port: u16,
 
-    pub fn init(allocator: Allocator) error{OutOfMemory}!Server {
+    pub fn init(allocator: Allocator, logger: Logger) error{OutOfMemory}!Server {
         var server = Server{
             .allocator = allocator,
+            .logger = logger,
             .methods = try allocator.create(hash_map.AutoHashMap(http.Method, *Route)),
             .get = try Route.init(allocator),
             .post = try Route.init(allocator),
@@ -76,7 +79,7 @@ pub const Server = struct {
             };
             defer allocator.free(segments);
             try tree.addRoute(allocator, segments, handler);
-            std.debug.print("[ZYN]\tRegistered route {s}: {s}\n", .{@tagName(method), endpoint});
+            s.logger.Info("Registered route {s}: {s}\n", .{@tagName(method), endpoint});
         } else {
             return error.InvalidMethod;
         }
@@ -89,7 +92,7 @@ pub const Server = struct {
         defer listener.deinit(io);
         s.bound_port = listener.socket.address.getPort();
         s.listening.store(true, .release);
-        std.debug.print("[ZYN]\tServer running on port {d}.\n", .{s.bound_port});
+        s.logger.Info("Server running on port {d}.\n", .{s.bound_port});
 
         while (s.running.load(.acquire)) {
             var stream = listener.accept(io) catch return error.AcceptError;
@@ -115,11 +118,10 @@ pub const Server = struct {
 
             var http_server = http.Server.init(&reader.interface, &writer.interface); 
             var http_req = http_server.receiveHead() catch |err| {
-                std.debug.print("error: {}\n\n", .{err});
+                s.logger.Info("error: {}\n\n", .{err});
                 continue;
             };
 
-            const start_ts = std.Io.Clock.real.now(io);
             const start_mono = std.Io.Clock.awake.now(io);
 
             var respond_options = http.Server.Request.RespondOptions{};
@@ -147,19 +149,7 @@ pub const Server = struct {
             else
                 std.fmt.bufPrint(&duration_buf, "{d:.3}µs", .{@as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(std.time.ns_per_us))}) catch "??µs";
 
-            const start_epoch_seconds = std.time.epoch.EpochSeconds{ .secs = @abs(start_ts.toSeconds()) };
-            const start_epoch_day = start_epoch_seconds.getEpochDay();
-            const start_day_seconds = start_epoch_seconds.getDaySeconds();
-            const start_year_day = start_epoch_day.calculateYearDay();
-            const start_month_day = start_year_day.calculateMonthDay();
-
-            std.debug.print("[HTTP] {d:0>2}/{d:0>2}/{d} - {d:0>2}:{d:0>2}:{d:0>2} | {d:<3} | {s:<11} | {s:>15} | {s:<7} {s}\n", .{
-                start_month_day.month.numeric(),
-                start_month_day.day_index + 1,
-                start_year_day.year,
-                start_day_seconds.getHoursIntoDay(),
-                start_day_seconds.getMinutesIntoHour(),
-                start_day_seconds.getSecondsIntoMinute(),
+            s.logger.Info("[HTTP] | {d:<3} | {s:<11} | {s:>15} | {s:<7} {s}\n", .{
                 @intFromEnum(respond_options.status),
                 duration_str,
                 source,
@@ -174,10 +164,7 @@ pub const Server = struct {
         s.running.store(false, .release);
         const addr = std.Io.net.IpAddress.parseIp4("127.0.0.1", port) catch return;
         const stream = addr.connect(io, .{ .mode = .stream }) catch return;
-        var write_buf: [256]u8 = undefined;
-        var writer = stream.writer(io, &write_buf);
-        writer.interface.writeAll("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n") catch {};
-        writer.interface.flush() catch {};
+        s.logger.Info("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", .{});
         stream.close(io);
     }
 
